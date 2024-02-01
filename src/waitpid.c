@@ -68,6 +68,10 @@ static int waitpid_lua(lua_State *L)
     case -1:
         // got error
         lua_pushnil(L);
+        if (errno == ECHILD) {
+            // no child process exists
+            return 1;
+        }
         lua_errno_new(L, errno, "waitpid");
         return 2;
 

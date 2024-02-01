@@ -1,7 +1,6 @@
 local assert = require('assert')
 local waitpid = require('waitpid')
 local fork = require('fork')
-local errno = require('errno')
 local signal = require('signal')
 local sleep = require('nanosleep.sleep')
 
@@ -42,7 +41,7 @@ local function test_wait()
     -- test that return error after all child process exit
     res, err, again = waitpid()
     assert.is_nil(res)
-    assert.equal(err.type, errno.ECHILD)
+    assert.is_nil(err)
     assert.is_nil(again)
 end
 

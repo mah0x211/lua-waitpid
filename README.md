@@ -48,7 +48,11 @@ please refer to `man 2 waitpid` for more details.
 
 **Parameters**
 
-- `pid:integer`: process id.
+- `pid:integer`: process id (defalut: `-1`).
+    - `-1`: wait for any child process.
+    - `0`: wait for any child process in the same process group as the caller.
+    - `>0`: wait for the child whose process id is equal to the value of `pid`
+    - `<-1`: wait for any child process whose process group id is equal to the absolute value of `pid`.
 - `...:string`: waitpid options;  
     - `'nohang'`: return immediately if no child has exited.
     - `'untraced'`: also return if a child has stopped.
@@ -62,5 +66,6 @@ please refer to `man 2 waitpid` for more details.
     - `sigterm:integer` = value of `WTERMSIG(wstatus)` if `WIFSIGNALED(wstatus)` is true.
     - `sigstop:integer` = value of `WSTOPSIG(wstatus)` if `WIFSTOPPED(wstatus)` is true.
     - `sigcont:boolean` = `true` if `WIFCONTINUED(wstatus)` is true
-- `err:error`: `nil` on success, or error object on failure.
+- `err:any`: error object on failure.
+    - `ECHILD` is ignored.
 - `again:boolean`: `true` if `waitpid` returns `0`.
