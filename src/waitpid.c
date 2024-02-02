@@ -68,6 +68,10 @@ static int waitpid_lua(lua_State *L)
     case -1:
         // got error
         lua_pushnil(L);
+        if (errno == ECHILD) {
+            // no child process exists
+            return 1;
+        }
         lua_errno_new(L, errno, "waitpid");
         return 2;
 
@@ -86,8 +90,10 @@ static int waitpid_lua(lua_State *L)
         // exit status
         lauxh_pushint2tbl(L, "exit", WEXITSTATUS(wstatus));
     } else if (WIFSIGNALED(wstatus)) {
+        int signo = WTERMSIG(wstatus);
         // exit by signal
-        lauxh_pushint2tbl(L, "sigterm", WTERMSIG(wstatus));
+        lauxh_pushint2tbl(L, "sigterm", signo);
+        lauxh_pushint2tbl(L, "exit", 128 + signo);
 
 #ifdef WCOREDUMP
         if (WCOREDUMP(wstatus)) {
