@@ -61,11 +61,12 @@ please refer to `man 2 waitpid` for more details.
 **Returns**
 
 - `res:table`: result table if succeeded.
-    - `pid:integer` = process id.
-    - `exit:integer` = value of `WEXITSTATUS(wstatus)` if `WIFEXITED(wstatus)` is true.
-    - `sigterm:integer` = value of `WTERMSIG(wstatus)` if `WIFSIGNALED(wstatus)` is true.
-    - `sigstop:integer` = value of `WSTOPSIG(wstatus)` if `WIFSTOPPED(wstatus)` is true.
-    - `sigcont:boolean` = `true` if `WIFCONTINUED(wstatus)` is true
+    - `pid:integer`: process id.
+    - `exit:integer`: value of `WEXITSTATUS(wstatus)` if `WIFEXITED(wstatus)` is true.
+        - if `WIFSIGNALED(wstatus)` is true, then the value is `128 + WTERMSIG(wstatus)`.
+    - `sigterm:integer`: value of `WTERMSIG(wstatus)` if `WIFSIGNALED(wstatus)` is true.
+    - `sigstop:integer`: value of `WSTOPSIG(wstatus)` if `WIFSTOPPED(wstatus)` is true.
+    - `sigcont:boolean`: `true` if `WIFCONTINUED(wstatus)` is true
 - `err:any`: error object on failure.
     - `ECHILD` is ignored.
 - `again:boolean`: `true` if `waitpid` returns `0`.

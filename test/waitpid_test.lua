@@ -168,9 +168,10 @@ local function test_wait_sigterm()
     local pid = p:pid()
 
     -- test that res.sigterm=SIGTERM
-    local res, err, again = p:wait()
+    local res, err, again = waitpid(pid)
     assert.equal(res, {
         pid = pid,
+        exit = 128 + signal.SIGTERM,
         sigterm = signal.SIGTERM,
     })
     assert.is_nil(err)
