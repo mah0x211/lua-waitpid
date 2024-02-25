@@ -41,9 +41,9 @@ print(dump(res))
 the functions/methods are return the error object created by https://github.com/mah0x211/lua-errno module.
 
 
-## res, err, again = waitpid( [pid [, ...]] )
+## res, err, again = waitpid( [pid [, sec [, ...]]] )
 
-wait for process termination.  
+wait for process to terminate in a thread.  
 please refer to `man 2 waitpid` for more details.
 
 **Parameters**
@@ -53,8 +53,8 @@ please refer to `man 2 waitpid` for more details.
     - `0`: wait for any child process in the same process group as the caller.
     - `>0`: wait for the child whose process id is equal to the value of `pid`
     - `<-1`: wait for any child process whose process group id is equal to the absolute value of `pid`.
+- `sec:integer`: timeout seconds (`nil` or `<0` means wait forever, default: `nil`).
 - `...:string`: waitpid options;  
-    - `'nohang'`: return immediately if no child has exited.
     - `'untraced'`: also return if a child has stopped.
     - `'continued'`: also return if a stopped child has been resumed by delivery of `SIGCONT`.
 

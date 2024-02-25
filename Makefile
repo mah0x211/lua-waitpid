@@ -1,7 +1,5 @@
-TARGET=waitpid.$(LIB_EXTENSION)
-SRCS=$(wildcard $(SRCDIR)/*.c)
-OBJS=$(SRCS:.c=.o)
-GCDAS=$(OBJS:.o=.gcda)
+SRCS=$(wildcard src/*.c)
+SOBJ=$(SRCS:.c=.$(LIB_EXTENSION))
 INSTALL?=install
 
 ifdef WAITPID_COVERAGE
@@ -10,15 +8,16 @@ endif
 
 .PHONY: all install
 
-all: $(TARGET)
+all: $(SOBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(WARNINGS) $(COVFLAGS) $(CPPFLAGS) -o $@ -c $<
 
-$(TARGET): $(OBJS)
+%.$(LIB_EXTENSION): %.o
 	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS) $(PLATFORM_LDFLAGS) $(COVFLAGS)
 
 install:
+	$(INSTALL) waitpid.lua $(INST_LUADIR)
 	$(INSTALL) -d $(INST_LIBDIR)
-	$(INSTALL) $(TARGET) $(INST_LIBDIR)
-	rm -f $(OBJS) $(TARGET) $(GCDAS)
+	$(INSTALL) $(SOBJ) $(INST_LIBDIR)
+	rm -f $(SOBJ) src/*.gcda
