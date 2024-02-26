@@ -1,3 +1,4 @@
+require('luacov')
 local assert = require('assert')
 local waitpid = require('waitpid')
 local fork = require('fork')
@@ -45,7 +46,7 @@ local function test_wait()
     assert.is_nil(again)
 end
 
-local function test_wait_nohang()
+local function test_wait_with_timeout()
     local p = assert(fork())
     if p:is_child() then
         -- test that child process exit 123 after 100ms
@@ -55,14 +56,14 @@ local function test_wait_nohang()
     local pid = p:pid()
 
     -- test that return again=true
-    local res, err, again = waitpid(nil, 'nohang')
+    local res, err, again = waitpid(nil, 0)
     assert.is_nil(res)
     assert.is_nil(err)
     assert.is_true(again)
 
     -- test that return result
     sleep(.6)
-    res, err, again = waitpid(nil, 'nohang')
+    res, err, again = waitpid()
     assert.equal(res, {
         pid = pid,
         exit = 123,
@@ -81,7 +82,7 @@ local function test_wait_untraced()
     local pid = p:pid()
 
     -- test that res.sigstop=SIGSTOP
-    local res, err, again = waitpid(nil, 'untraced')
+    local res, err, again = waitpid(nil, nil, 'untraced')
     assert.equal(res, {
         pid = pid,
         sigstop = signal.SIGSTOP,
@@ -114,7 +115,7 @@ local function test_wait_continued()
     end
 
     -- test that res.sigcont=true
-    local res, err, again = waitpid(pid1, 'continued')
+    local res, err, again = waitpid(pid1, nil, 'continued')
     assert.equal(res, {
         pid = pid1,
         sigcont = true,
@@ -179,7 +180,7 @@ local function test_wait_sigterm()
 end
 
 test_wait()
-test_wait_nohang()
+test_wait_with_timeout()
 test_wait_untraced()
 test_wait_continued()
 test_wait_sigterm()
