@@ -41,7 +41,7 @@ print(dump(res))
 the functions/methods are return the error object created by https://github.com/mah0x211/lua-errno module.
 
 
-## res, err, again = waitpid( [pid [, sec [, ...]]] )
+## res, err, timeout = waitpid( [pid [, sec [, ...]]] )
 
 wait for process to terminate in a thread.  
 please refer to `man 2 waitpid` for more details.
@@ -69,4 +69,4 @@ please refer to `man 2 waitpid` for more details.
     - `sigcont:boolean`: `true` if `WIFCONTINUED(wstatus)` is true
 - `err:any`: error object on failure.
     - `ECHILD` is ignored.
-- `again:boolean`: `true` if `waitpid` returns `0`.
+- `timeout:boolean`: `true` if timeout or too many threads are running.
