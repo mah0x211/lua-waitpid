@@ -55,6 +55,7 @@ please refer to `man 2 waitpid` for more details.
     - `<-1`: wait for any child process whose process group id is equal to the absolute value of `pid`.
 - `sec:integer`: timeout seconds (`nil` or `<0` means wait forever, default: `nil`).
 - `...:string`: waitpid options;  
+    - `'nohang'`: return immediately if no child has exited. (`sec` argument is ignored)
     - `'untraced'`: also return if a child has stopped.
     - `'continued'`: also return if a stopped child has been resumed by delivery of `SIGCONT`.
 

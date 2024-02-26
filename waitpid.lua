@@ -38,43 +38,27 @@ local function waitpid(pid, sec, ...)
     if not ctx then
         -- failed to create waitpid context
         return nil, err, again
-    end
-
-    local res
-    res, err, again = ctx:waitpid()
-    if not again then
-        return res, err
+    elseif ctx:is_nohang() then
+        return ctx:waitpid()
     end
 
     -- wait for the thread to exit
     local fd = ctx:fd()
     local ok
-    ok, err, again = poll_wait_readable(fd, sec)
+    ok, err = poll_wait_readable(fd, sec)
     if not ok then
-        if not again then
+        if err then
             -- got error
             return nil, err
         end
 
-        -- cancel the thread
+        -- cancel the thread if timeout
         ok, err = ctx:cancel()
         if not ok and err then
             -- failed to cancel the thread
             return nil, err
         end
     end
-
-    -- wait for the thread to exit
-    ok, err, again = poll_wait_readable(fd)
-    if not ok then
-        if again then
-            error('failed to cancel the thread')
-        end
-        -- got error
-        return nil, err
-    end
-
-    -- get the result
     return ctx:waitpid()
 end
 
