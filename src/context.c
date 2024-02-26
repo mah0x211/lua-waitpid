@@ -37,42 +37,20 @@ typedef struct {
     int status;
     int options;
     int errnum;
+    int is_nohang;
 } waitpid_ctx_t;
 
-static int waitpid_lua(lua_State *L)
+static int pushresult_lua(lua_State *L, waitpid_ctx_t *ctx)
 {
-    waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
-    char buf[2]        = {0};
-    ssize_t len        = read(ctx->pipefd[0], buf, sizeof(buf));
-
-    lua_settop(L, 1);
-    switch (len) {
-    case -1:
-        // got error
-        lua_pushnil(L);
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            lua_pushnil(L);
-            lua_pushboolean(L, 1);
-            return 3;
-        }
-        lua_errno_new(L, errno, "read");
-        return 2;
-
-    default:
-        // got signal
-        close(ctx->pipefd[0]);
-        ctx->pipefd[0] = -1;
-    }
-
-    if (ctx->wpid == -2) {
-        // thread is canceled
+    // check result
+    if (ctx->wpid == 0) {
+        // thread is canceled or waitpid with WNOHANG option
         lua_pushnil(L);
         lua_pushnil(L);
         lua_pushboolean(L, 1);
         return 3;
     }
 
-    // check result
     if (ctx->wpid == -1) {
         // got error
         lua_pushnil(L);
@@ -113,9 +91,56 @@ static int waitpid_lua(lua_State *L)
     return 1;
 }
 
+static int waitpid_with_thread(lua_State *L, waitpid_ctx_t *ctx)
+{
+    char buf[2] = {0};
+    ssize_t len = read(ctx->pipefd[0], buf, sizeof(buf));
+
+    lua_settop(L, 1);
+    switch (len) {
+    case -1:
+        // got error
+        lua_pushnil(L);
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            lua_pushnil(L);
+            lua_pushboolean(L, 1);
+            return 3;
+        }
+        lua_errno_new(L, errno, "read");
+        return 2;
+
+    default:
+        // got signal
+        close(ctx->pipefd[0]);
+        ctx->pipefd[0] = -1;
+    }
+
+    return pushresult_lua(L, ctx);
+}
+
+static int waitpid_lua(lua_State *L)
+{
+    waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
+
+    if (ctx->is_nohang) {
+        ctx->wpid = waitpid(ctx->pid, &ctx->status, ctx->options);
+        if (ctx->wpid == -1) {
+            ctx->errnum = errno;
+        }
+        return pushresult_lua(L, ctx);
+    }
+    return waitpid_with_thread(L, ctx);
+}
+
 static int cancel_lua(lua_State *L)
 {
     waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
+
+    if (ctx->is_nohang) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "cannot cancel waitpid with nohang option");
+        return 2;
+    }
 
     errno = pthread_mutex_lock(&ctx->mutex);
     if (errno) {
@@ -130,6 +155,13 @@ static int cancel_lua(lua_State *L)
     pthread_mutex_unlock(&ctx->mutex);
 
     lua_pushboolean(L, errno == 0);
+    return 1;
+}
+
+static int is_nohang_lua(lua_State *L)
+{
+    waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
+    lua_pushboolean(L, ctx->is_nohang);
     return 1;
 }
 
@@ -166,6 +198,9 @@ static void waitpid_thread_cleanup(void *arg)
 
     // send signal to main thread
     pthread_mutex_lock(&ctx->mutex);
+    if (ctx->wpid == -2) {
+        ctx->wpid = 0;
+    }
     close(ctx->pipefd[1]);
     ctx->pipefd[1] = -1;
     pthread_mutex_unlock(&ctx->mutex);
@@ -194,6 +229,7 @@ static void *waitpid_thread(void *arg)
 static inline int checkoptions(lua_State *L, int index)
 {
     static const char *const options[] = {
+        "nohang",
         "untraced",
         "continued",
         NULL,
@@ -204,6 +240,10 @@ static inline int checkoptions(lua_State *L, int index)
     for (; index <= top; index++) {
         switch (luaL_checkoption(L, index, NULL, options)) {
         case 0:
+            opts |= WNOHANG;
+            break;
+
+        case 1:
             opts |= WUNTRACED;
             break;
 
@@ -224,6 +264,22 @@ static int new_lua(lua_State *L)
     int options        = checkoptions(L, 2);
     waitpid_ctx_t *ctx = lua_newuserdata(L, sizeof(waitpid_ctx_t));
 
+    // initialize context
+    ctx->mutex     = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+    ctx->pipefd[0] = -1;
+    ctx->pipefd[1] = -1;
+    ctx->pid       = pid;
+    ctx->wpid      = -2;
+    ctx->status    = 0;
+    ctx->options   = options;
+    ctx->errnum    = 0;
+    ctx->is_nohang = options & WNOHANG;
+    if (ctx->is_nohang) {
+        // waitpid without thread if WNOHANG is set
+        lauxh_setmetatable(L, WAITPID_CONTEXT_MT);
+        return 1;
+    }
+
     // create pipe with O_NONBLOCK
     if (pipe(ctx->pipefd) == -1) {
         // failed to create pipe
@@ -238,13 +294,6 @@ static int new_lua(lua_State *L)
         lua_errno_new(L, errno, "fcntl");
         return 2;
     }
-    // initialize context
-    ctx->mutex   = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
-    ctx->pid     = pid;
-    ctx->wpid    = -2;
-    ctx->status  = 0;
-    ctx->options = options;
-    ctx->errnum  = 0;
 
     // create thread
     errno = pthread_create(&ctx->tid, NULL, waitpid_thread, ctx);
@@ -284,10 +333,11 @@ LUALIB_API int luaopen_waitpid_context(lua_State *L)
         {NULL,         NULL        }
     };
     struct luaL_Reg methods[] = {
-        {"fd",      fd_lua     },
-        {"cancel",  cancel_lua },
-        {"waitpid", waitpid_lua},
-        {NULL,      NULL       }
+        {"fd",        fd_lua       },
+        {"is_nohang", is_nohang_lua},
+        {"cancel",    cancel_lua   },
+        {"waitpid",   waitpid_lua  },
+        {NULL,        NULL         }
     };
 
     // create metatable
