@@ -27,7 +27,7 @@ build = {
         CFLAGS = "$(CFLAGS)",
         WARNINGS = "-Wall -Wno-trigraphs -Wmissing-field-initializers -Wreturn-type -Wmissing-braces -Wparentheses -Wno-switch -Wunused-function -Wunused-label -Wunused-parameter -Wunused-variable -Wunused-value -Wuninitialized -Wunknown-pragmas -Wshadow -Wsign-compare",
         CPPFLAGS = "-I$(LUA_INCDIR) -I$(PTHREAD_INCDIR)",
-        LDFLAGS = "$(LIBFLAG) -L$(PTHREAD_LIBDIR)",
+        LDFLAGS = "$(LIBFLAG) -L$(PTHREAD_LIBDIR) -lpthread",
         LIB_EXTENSION = "$(LIB_EXTENSION)",
         WAITPID_COVERAGE = "$(WAITPID_COVERAGE)",
     },

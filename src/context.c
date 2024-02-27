@@ -30,7 +30,6 @@
 
 typedef struct {
     pthread_t tid;
-    pthread_mutex_t mutex;
     int pipefd[2];
     pid_t pid;
     pid_t wpid;
@@ -42,7 +41,6 @@ typedef struct {
 
 static int pushresult_lua(lua_State *L, waitpid_ctx_t *ctx)
 {
-    // check result
     if (ctx->wpid == 0) {
         // thread is canceled or waitpid with WNOHANG option
         lua_pushnil(L);
@@ -115,6 +113,9 @@ static int waitpid_with_thread(lua_State *L, waitpid_ctx_t *ctx)
         ctx->pipefd[0] = -1;
     }
 
+    // confirm that the thread is finished
+    pthread_join(ctx->tid, NULL);
+
     return pushresult_lua(L, ctx);
 }
 
@@ -170,7 +171,11 @@ static int gc_lua(lua_State *L)
 {
     waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
 
-    if (!ctx->is_nohang && ctx->wpid == -2) {
+    if (ctx->is_nohang) {
+        return 0;
+    }
+
+    if (ctx->wpid == -2) {
         // cancel thread
         pthread_cancel(ctx->tid);
         pthread_join(ctx->tid, NULL);
@@ -183,7 +188,6 @@ static int gc_lua(lua_State *L)
     if (ctx->pipefd[1] != -1) {
         close(ctx->pipefd[1]);
     }
-    pthread_mutex_destroy(&ctx->mutex);
 
     return 0;
 }
@@ -193,22 +197,26 @@ static void waitpid_thread_cleanup(void *arg)
     waitpid_ctx_t *ctx = (waitpid_ctx_t *)arg;
 
     // send signal to main thread
-    if (ctx->wpid == -2) {
+    switch (ctx->wpid) {
+    case -2:
+        // thread is canceled
         ctx->wpid = 0;
+        break;
+
+    case -1:
+        // got error from waitpid
+        ctx->errnum = errno;
     }
     close(ctx->pipefd[1]);
     ctx->pipefd[1] = -1;
-    pthread_mutex_unlock(&ctx->mutex);
 }
 
 static void *waitpid_thread(void *arg)
 {
     waitpid_ctx_t *ctx = (waitpid_ctx_t *)arg;
 
-    pthread_mutex_lock(&ctx->mutex);
     pthread_cleanup_push(waitpid_thread_cleanup, ctx);
     ctx->wpid = waitpid(ctx->pid, &ctx->status, ctx->options);
-
     if (ctx->wpid == -1) {
         // keep errno
         ctx->errnum = errno;
@@ -216,7 +224,6 @@ static void *waitpid_thread(void *arg)
     close(ctx->pipefd[1]);
     ctx->pipefd[1] = -1;
     pthread_cleanup_pop(1);
-    pthread_mutex_unlock(&ctx->mutex);
 
     return NULL;
 }
@@ -260,7 +267,6 @@ static int new_lua(lua_State *L)
     waitpid_ctx_t *ctx = lua_newuserdata(L, sizeof(waitpid_ctx_t));
 
     // initialize context
-    ctx->mutex     = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
     ctx->pipefd[0] = -1;
     ctx->pipefd[1] = -1;
     ctx->pid       = pid;
