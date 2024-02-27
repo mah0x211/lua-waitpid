@@ -141,20 +141,7 @@ static int cancel_lua(lua_State *L)
         lua_pushliteral(L, "cannot cancel waitpid with nohang option");
         return 2;
     }
-
-    errno = pthread_mutex_lock(&ctx->mutex);
-    if (errno) {
-        lua_pushboolean(L, 0);
-        lua_errno_new(L, errno, "pthread_mutex_lock");
-        return 2;
-    }
-
-    if (ctx->pipefd[1] != -1) {
-        errno = pthread_cancel(ctx->tid);
-    }
-    pthread_mutex_unlock(&ctx->mutex);
-
-    lua_pushboolean(L, errno == 0);
+    lua_pushboolean(L, (ctx->wpid == -2) ? pthread_cancel(ctx->tid) == 0 : 0);
     return 1;
 }
 
@@ -182,6 +169,13 @@ static int tostring_lua(lua_State *L)
 static int gc_lua(lua_State *L)
 {
     waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
+
+    if (!ctx->is_nohang && ctx->wpid == -2) {
+        // cancel thread
+        pthread_cancel(ctx->tid);
+        pthread_join(ctx->tid, NULL);
+    }
+
     // close pipe
     if (ctx->pipefd[0] != -1) {
         close(ctx->pipefd[0]);
@@ -189,6 +183,8 @@ static int gc_lua(lua_State *L)
     if (ctx->pipefd[1] != -1) {
         close(ctx->pipefd[1]);
     }
+    pthread_mutex_destroy(&ctx->mutex);
+
     return 0;
 }
 
@@ -197,7 +193,6 @@ static void waitpid_thread_cleanup(void *arg)
     waitpid_ctx_t *ctx = (waitpid_ctx_t *)arg;
 
     // send signal to main thread
-    pthread_mutex_lock(&ctx->mutex);
     if (ctx->wpid == -2) {
         ctx->wpid = 0;
     }
@@ -210,6 +205,7 @@ static void *waitpid_thread(void *arg)
 {
     waitpid_ctx_t *ctx = (waitpid_ctx_t *)arg;
 
+    pthread_mutex_lock(&ctx->mutex);
     pthread_cleanup_push(waitpid_thread_cleanup, ctx);
     ctx->wpid = waitpid(ctx->pid, &ctx->status, ctx->options);
 
@@ -217,12 +213,11 @@ static void *waitpid_thread(void *arg)
         // keep errno
         ctx->errnum = errno;
     }
-    pthread_mutex_lock(&ctx->mutex);
     close(ctx->pipefd[1]);
     ctx->pipefd[1] = -1;
+    pthread_cleanup_pop(1);
     pthread_mutex_unlock(&ctx->mutex);
 
-    pthread_cleanup_pop(1);
     return NULL;
 }
 
@@ -309,15 +304,6 @@ static int new_lua(lua_State *L)
             return 3;
         }
         lua_errno_new(L, errno, "pthread_create");
-        return 2;
-    }
-    errno = pthread_detach(ctx->tid);
-    if (errno) {
-        close(ctx->pipefd[0]);
-        close(ctx->pipefd[1]);
-        // failed to detach thread
-        lua_pushnil(L);
-        lua_errno_new(L, errno, "pthread_detach");
         return 2;
     }
 
