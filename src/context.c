@@ -43,6 +43,9 @@ typedef struct {
 static int pushresult_lua(lua_State *L, waitpid_ctx_t *ctx)
 {
     // check result
+    pthread_mutex_lock(&ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
+
     if (ctx->wpid == 0) {
         // thread is canceled or waitpid with WNOHANG option
         lua_pushnil(L);
@@ -170,11 +173,16 @@ static int gc_lua(lua_State *L)
 {
     waitpid_ctx_t *ctx = lauxh_checkudata(L, 1, WAITPID_CONTEXT_MT);
 
-    if (!ctx->is_nohang && ctx->wpid == -2) {
+    if (ctx->is_nohang) {
+        return 0;
+    }
+
+    if (ctx->wpid == -2) {
         // cancel thread
         pthread_cancel(ctx->tid);
-        pthread_join(ctx->tid, NULL);
     }
+    pthread_join(ctx->tid, NULL);
+    pthread_mutex_destroy(&ctx->mutex);
 
     // close pipe
     if (ctx->pipefd[0] != -1) {
@@ -183,7 +191,6 @@ static int gc_lua(lua_State *L)
     if (ctx->pipefd[1] != -1) {
         close(ctx->pipefd[1]);
     }
-    pthread_mutex_destroy(&ctx->mutex);
 
     return 0;
 }
@@ -205,10 +212,8 @@ static void *waitpid_thread(void *arg)
 {
     waitpid_ctx_t *ctx = (waitpid_ctx_t *)arg;
 
-    pthread_mutex_lock(&ctx->mutex);
     pthread_cleanup_push(waitpid_thread_cleanup, ctx);
     ctx->wpid = waitpid(ctx->pid, &ctx->status, ctx->options);
-
     if (ctx->wpid == -1) {
         // keep errno
         ctx->errnum = errno;
@@ -291,8 +296,11 @@ static int new_lua(lua_State *L)
     }
 
     // create thread
+    pthread_mutex_lock(&ctx->mutex);
     errno = pthread_create(&ctx->tid, NULL, waitpid_thread, ctx);
     if (errno) {
+        pthread_mutex_unlock(&ctx->mutex);
+        pthread_mutex_destroy(&ctx->mutex);
         close(ctx->pipefd[0]);
         close(ctx->pipefd[1]);
         // failed to create thread
