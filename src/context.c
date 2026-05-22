@@ -20,11 +20,18 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 // lua
-#include <lua_errno.h>
+#include <lauxlib.h>
+#include <lua.h>
+// external libraries
+#include "lauxhlib.h"
+#include "lua_errno.h"
 
 #define WAITPID_CONTEXT_MT "waitpid.context"
 
