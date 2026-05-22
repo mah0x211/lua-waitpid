@@ -1,3 +1,4 @@
+rockspec_format = "3.0"
 package = "waitpid"
 version = "dev-1"
 source = {
@@ -12,6 +13,7 @@ description = {
 dependencies = {
     "lua >= 5.1",
     "errno >= 0.5.0",
+    "lauxhlib >= 0.6.3",
     "gpoll >= 0.9.0",
 }
 external_dependencies = {
@@ -20,21 +22,38 @@ external_dependencies = {
         library = "pthread",
     },
 }
+build_dependencies = {
+    "luarocks-build-hooks >= 0.7.0",
+}
 build = {
-    type = "make",
-    build_variables = {
-        SRCDIR = "src",
-        CFLAGS = "$(CFLAGS)",
-        WARNINGS = "-Wall -Wno-trigraphs -Wmissing-field-initializers -Wreturn-type -Wmissing-braces -Wparentheses -Wno-switch -Wunused-function -Wunused-label -Wunused-parameter -Wunused-variable -Wunused-value -Wuninitialized -Wunknown-pragmas -Wshadow -Wsign-compare",
-        CPPFLAGS = "-I$(LUA_INCDIR) -I$(PTHREAD_INCDIR)",
-        LDFLAGS = "$(LIBFLAG) -L$(PTHREAD_LIBDIR) -lpthread",
-        LIB_EXTENSION = "$(LIB_EXTENSION)",
-        WAITPID_COVERAGE = "$(WAITPID_COVERAGE)",
+    type = "hooks",
+    before_build = {
+        "$(extra-vars)",
     },
-    install_variables = {
-        SRCDIR = "src",
-        INST_LUADIR = "$(LUADIR)",
-        INST_LIBDIR = "$(LIBDIR)/waitpid/",
-        LIB_EXTENSION = "$(LIB_EXTENSION)",
+    extra_variables = {
+        CFLAGS = "-Wall -Wno-trigraphs -Wmissing-field-initializers -Wreturn-type -Wmissing-braces -Wparentheses -Wno-switch -Wunused-function -Wunused-label -Wunused-parameter -Wunused-variable -Wunused-value -Wuninitialized -Wunknown-pragmas -Wshadow -Wsign-compare",
+    },
+    conditional_variables = {
+        WAITPID_COVERAGE = {
+            CFLAGS = "--coverage",
+            LIBFLAG = "--coverage",
+        },
+    },
+    modules = {
+        ["waitpid"] = "waitpid.lua",
+        ["waitpid.context"] = {
+            sources = "src/context.c",
+            incdirs = {
+                "$(PTHREAD_INCDIR)",
+                "$(DEP_LAUXHLIB_INCDIR)",
+                "$(DEP_ERRNO_INCDIR)",
+            },
+            libdirs = {
+                "$(PTHREAD_LIBDIR)",
+            },
+            libs = {
+                "$(PTHREAD_LIB)",
+            },
+        },
     },
 }
