@@ -1,27 +1,33 @@
-require('luacov')
+local testcase = require('testcase')
 local assert = require('assert')
 local waitpid = require('waitpid')
-local fork = require('fork')
-local signal = require('signal')
-local sleep = require('nanosleep.sleep')
+local fork = require('testcase.fork')
+local signal = require('testcase.signal')
+local timer = require('testcase.timer')
+-- testcase replaces os.exit with a dummy that throws an error; use the real
+-- os.exit in child processes so the parent sees the intended exit code.
+local exit = require('testcase.exit').exit
 
-local function test_wait()
+local SIGTERM = assert(signal.tosignum('SIGTERM'),
+                       'cannot detect SIGTERM signal number')
+local SIGSTOP = assert(signal.tosignum('SIGSTOP'),
+                       'cannot detect SIGSTOP signal number')
+
+function testcase.test_wait()
     local p1 = assert(fork())
     if p1:is_child() then
-        -- test that child process exit 123
-        os.exit(123)
+        exit(123)
     end
     local pid1 = p1:pid()
 
     local p2 = assert(fork())
     if p2:is_child() then
-        -- test that child process exit 123
-        sleep(.1)
-        os.exit(124)
+        timer.sleep(0.1)
+        exit(124)
     end
     local pid2 = p2:pid()
 
-    -- test that wait specified child process exit
+    -- wait for a specific child
     local res, err, again = waitpid(pid2)
     assert.is_nil(err)
     assert.is_nil(again)
@@ -30,7 +36,7 @@ local function test_wait()
         exit = 124,
     })
 
-    -- test that wait child process exit
+    -- wait for any remaining child
     res, err, again = waitpid()
     assert.is_nil(err)
     assert.is_nil(again)
@@ -39,30 +45,29 @@ local function test_wait()
         exit = 123,
     })
 
-    -- test that return error after all child process exit
+    -- no more children
     res, err, again = waitpid()
     assert.is_nil(err)
     assert.is_nil(again)
     assert.is_nil(res)
 end
 
-local function test_wait_with_timeout()
+function testcase.test_wait_with_timeout()
     local p = assert(fork())
     if p:is_child() then
-        -- test that child process exit 123 after 100ms
-        sleep(.1)
-        os.exit(123)
+        timer.sleep(0.1)
+        exit(123)
     end
     local pid = p:pid()
 
-    -- test that return again=true
+    -- sec=0 causes an immediate poll timeout
     local res, err, again = waitpid(nil, 0)
     assert.is_nil(err)
     assert.is_true(again)
     assert.is_nil(res)
 
-    -- test that return result
-    sleep(.6)
+    -- wait until the child has exited
+    timer.sleep(0.6)
     res, err, again = waitpid()
     assert.is_nil(err)
     assert.is_nil(again)
@@ -72,15 +77,15 @@ local function test_wait_with_timeout()
     })
 end
 
-local function test_wait_nohang()
+function testcase.test_wait_nohang()
     local p = assert(fork())
     if p:is_child() then
-        sleep(0.1)
-        os.exit(123)
+        timer.sleep(0.1)
+        exit(123)
     end
     local pid = p:pid()
 
-    -- test that return timeout=true immediately
+    -- nohang returns immediately when no status is available
     local res, err, again = waitpid(pid, 1, 'nohang')
     assert.is_nil(err)
     assert.is_true(again)
@@ -90,48 +95,46 @@ local function test_wait_nohang()
     assert(waitpid(pid))
 end
 
-local function test_wait_untraced()
+function testcase.test_wait_untraced()
     local p = assert(fork())
     if p:is_child() then
-        -- test that child process exit 123 after sig continued
-        assert(signal.kill(signal.SIGSTOP))
-        os.exit(123)
+        -- stop self to trigger WSTOPPED
+        signal.raise('SIGSTOP')
+        exit(123)
     end
     local pid = p:pid()
 
-    -- test that res.sigstop=SIGSTOP
+    -- detect WSTOPPED event
     local res, err, again = waitpid(nil, nil, 'untraced')
     assert.is_nil(err)
     assert.is_nil(again)
     assert.equal(res, {
         pid = pid,
-        sigstop = signal.SIGSTOP,
+        sigstop = SIGSTOP,
     })
 
-    -- cleanup
-    assert(signal.kill(signal.SIGCONT, pid))
+    -- let the child finish
+    signal.kill('SIGCONT', pid)
     waitpid()
 end
 
-local function test_wait_continued()
+function testcase.test_wait_continued()
     local p1 = assert(fork())
     if p1:is_child() then
-        -- child process exit 123 after sig continued
-        assert(signal.kill(signal.SIGSTOP))
-        sleep(.1)
-        os.exit(123)
+        signal.raise('SIGSTOP')
+        timer.sleep(0.1)
+        exit(123)
     end
     local pid1 = p1:pid()
 
     local p2 = assert(fork())
     if p2:is_child() then
-        -- send SIGCONT signal after 100ms
-        sleep(.2)
-        assert(signal.kill(signal.SIGCONT, pid1))
-        os.exit()
+        timer.sleep(0.2)
+        signal.kill('SIGCONT', pid1)
+        exit()
     end
 
-    -- test that res.sigcont=true
+    -- detect WCONTINUED event
     local res, err, again = waitpid(pid1, nil, 'continued')
     assert.is_nil(err)
     assert.is_nil(again)
@@ -142,26 +145,28 @@ local function test_wait_continued()
 
     -- cleanup
     waitpid()
+end
 
-    -- test that return exit status if continued process exit before wait
-    p1 = assert(fork())
+function testcase.test_wait_continued_then_exit()
+    -- verify that waitpid returns the exit status when the continued child
+    -- exits before the parent calls waitpid
+    local p1 = assert(fork())
     if p1:is_child() then
-        -- child process exit 123 after continued
-        assert(signal.kill(signal.SIGSTOP))
-        os.exit(123)
+        signal.raise('SIGSTOP')
+        exit(123)
     end
-    pid1 = p1:pid()
+    local pid1 = p1:pid()
 
-    p2 = assert(fork())
+    local p2 = assert(fork())
     if p2:is_child() then
-        -- send SIGCONT signal after 100ms
-        sleep(.1)
-        assert(signal.kill(signal.SIGCONT, pid1))
-        os.exit()
+        timer.sleep(0.1)
+        signal.kill('SIGCONT', pid1)
+        exit()
     end
 
-    sleep(.3)
-    res, err, again = waitpid(pid1)
+    -- wait until p1 has been continued and exited
+    timer.sleep(0.3)
+    local res, err, again = waitpid(pid1)
     assert.is_nil(err)
     assert.is_nil(again)
     assert.equal(res, {
@@ -173,30 +178,23 @@ local function test_wait_continued()
     waitpid()
 end
 
-local function test_wait_sigterm()
+function testcase.test_wait_sigterm()
     local p = assert(fork())
     if p:is_child() then
-        -- child process exit with sigterm after 100ms
-        sleep(.1)
-        assert(signal.kill(signal.SIGTERM))
-        os.exit(123)
+        timer.sleep(0.1)
+        -- deliver SIGTERM to self
+        signal.raise('SIGTERM')
+        exit(123)
     end
     local pid = p:pid()
 
-    -- test that res.sigterm=SIGTERM
+    -- detect signal-terminated child
     local res, err, again = waitpid(pid)
     assert.is_nil(err)
     assert.is_nil(again)
     assert.equal(res, {
         pid = pid,
-        exit = 128 + signal.SIGTERM,
-        sigterm = signal.SIGTERM,
+        exit = 128 + SIGTERM,
+        sigterm = SIGTERM,
     })
 end
-
-test_wait()
-test_wait_with_timeout()
-test_wait_nohang()
-test_wait_untraced()
-test_wait_continued()
-test_wait_sigterm()

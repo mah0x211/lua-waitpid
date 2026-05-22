@@ -57,14 +57,11 @@ jobs:
       name: Install Tools
       run: |
         luarocks install luacov
-        luarocks install assert
-        luarocks install signal
-        luarocks install fork
-        luarocks install nanosleep
+        luarocks install testcase
     -
       name: Run Test
       run: |
-        lua ./test/waitpid_test.lua
+        testcase --coverage ./test/
     -
       name: Generate coverage reports
       run: |
