@@ -20,18 +20,18 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+// depend
+#include "lauxhlib.h"
+#include "lua_errno.h"
+// lua
+#include <lauxlib.h>
+// system
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-// lua
-#include <lauxlib.h>
-#include <lua.h>
-// external libraries
-#include "lauxhlib.h"
-#include "lua_errno.h"
 
 #define WAITPID_CONTEXT_MT "waitpid.context"
 
